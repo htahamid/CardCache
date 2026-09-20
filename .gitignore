@@ -1,10 +1,19 @@
+# Environment variables
 .env
 .env.*
 !.env.example
 
+# Dependencies
 node_modules/
 vendor/
 
+# Supabase local files
+supabase/.temp/
+.supabase/
+
+# Logs
 *.log
+
+# Operating system files
 .DS_Store
 Thumbs.db
