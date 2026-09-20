@@ -2044,7 +2044,7 @@ async function getCardPrinting(set, collectorNumber)
 
         const card = await response.json();
 
-        /* Extract the information CardCache needs */
+        /* Extract the information ManaSaver needs */
 
         const cardData = {
             scryfall_id: card.id,
@@ -2402,10 +2402,10 @@ async function deleteCloudCard(entryId)
 }
 
 /* =========================================
-   INITIALIZE CARDCACHE
+   INITIALIZE ManaSaver
    ========================================= */
 
-async function initializeCardCache()
+async function initializeManaSaver()
 {
     const { data, error } =
         await supabaseClient.auth.getUser();
@@ -2426,7 +2426,7 @@ async function initializeCardCache()
 
 /* Run When Page Loads */
 
-initializeCardCache();
+initializeManaSaver();
 
 /* =========================================
    SCRYFALL LOOKUP BY CARD NAME

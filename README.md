@@ -1,14 +1,14 @@
-# CardCache
+# ManaSaver
 
 **Build more decks. Buy fewer cards.**
 
-[Live Demo](https://htahamid.github.io/CardCache/index.html) | [GitHub Repository](https://github.com/htahamid/CardCache)
+[Live Demo](https://htahamid.github.io/ManaSaver/index.html) | [GitHub Repository](https://github.com/htahamid/ManaSaver)
 
 ## About
 
-CardCache is an inventory-aware Magic: The Gathering deckbuilding application designed to help players make better use of the cards they already own.
+ManaSaver is an inventory-aware Magic: The Gathering deckbuilding application designed to help players make better use of the cards they already own.
 
-By combining collection management, deck analysis, and card pricing, CardCache helps players discover useful cards in their existing collections, complete unfinished Commander decks, and reduce unnecessary purchases.
+By combining collection management, deck analysis, and card pricing, ManaSaver helps players discover useful cards in their existing collections, complete unfinished Commander decks, and reduce unnecessary purchases.
 
 ## Features
 
@@ -61,12 +61,12 @@ By combining collection management, deck analysis, and card pricing, CardCache h
 
 ## Live Demo
 
-**[Launch CardCache](https://htahamid.github.io/CardCache/index.html)**
+**[Launch ManaSaver](https://htahamid.github.io/ManaSaver/index.html)**
 
-CardCache is hosted on GitHub Pages and uses Supabase for authentication and cloud storage.
+ManaSaver is hosted on GitHub Pages and uses Supabase for authentication and cloud storage.
 
 ## Hackathon Project
 
 Built for **SASEHACK 2026**.
 
-CardCache was developed to address a common problem among Magic: The Gathering players: purchasing cards for new decks without realizing that suitable cards may already exist in their collections.
+ManaSaver was developed to address a common problem among Magic: The Gathering players: purchasing cards for new decks without realizing that suitable cards may already exist in their collections.

@@ -6,7 +6,7 @@ const themeToggle =
     document.getElementById("themeToggle");
 
 const savedTheme =
-    localStorage.getItem("cardcache-theme");
+    localStorage.getItem("ManaSaver-theme");
 
 const systemPrefersLight =
     window.matchMedia(
@@ -69,7 +69,7 @@ themeToggle.addEventListener(
         applyTheme(currentTheme);
 
         localStorage.setItem(
-            "cardcache-theme",
+            "ManaSaver-theme",
             currentTheme
         );
     }
