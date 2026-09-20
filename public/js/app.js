@@ -57,6 +57,13 @@ collectionFilters.innerHTML = `
             <option value="R">Red</option>
             <option value="G">Green</option>
             <option value="C">Colorless</option>
+
+            <option value="mono">Any Monocolor</option>
+            <option value="mono:W">Mono-White</option>
+            <option value="mono:U">Mono-Blue</option>
+            <option value="mono:B">Mono-Black</option>
+            <option value="mono:R">Mono-Red</option>
+            <option value="mono:G">Mono-Green</option>
         </select>
     </label>
 
@@ -1399,6 +1406,8 @@ collectionSearch.addEventListener(
         collectionPage = 1;
 
         displayCollection();
+
+        loadCollectionPricing().catch(console.error);
     }
 );
 
@@ -3441,6 +3450,10 @@ async function loadCollectionPricing()
     const { data: userData, error: userError } =
         await supabaseClient.auth.getUser();
 
+    /* =========================================
+       USER IS NOT SIGNED IN
+       ========================================= */
+
     if (userError || !userData.user)
     {
         collectionValue.textContent = "—";
@@ -3454,26 +3467,30 @@ async function loadCollectionPricing()
 
             priceChartInstance = null;
         }
-         /* Check whether any collection filter is active */
 
-        const hasActiveFilters =
-            collectionSearch.value.trim() !== "" ||
-            collectionColorFilter.value !== "" ||
-            collectionManaFilter.value !== "" ||
-            collectionRarityFilter.value !== "";
-
-        if (hasActiveFilters)
-        {
-            displayFilteredCollectionPricing();
-
-            return;
-        }
-
-        const { data, error } =
-            await supabaseClient
-                .from("collection_value_snapshots")
         return;
     }
+
+    /* =========================================
+       CHECK WHETHER FILTERS ARE ACTIVE
+       ========================================= */
+
+    const hasActiveFilters =
+        collectionSearch.value.trim() !== "" ||
+        collectionColorFilter.value !== "" ||
+        collectionManaFilter.value !== "" ||
+        collectionRarityFilter.value !== "";
+
+    if (hasActiveFilters)
+    {
+        displayFilteredCollectionPricing();
+
+        return;
+    }
+
+    /* =========================================
+       NO FILTERS: LOAD FULL COLLECTION HISTORY
+       ========================================= */
 
     const { data, error } =
         await supabaseClient
@@ -4015,16 +4032,49 @@ function getFilteredCollectionCards()
                 ? card.color_identity
                 : null;
 
-        const colorMatches =
-            selectedColor === "" ||
-            (
-                colors !== null &&
-                (
-                    selectedColor === "C"
-                        ? colors.length === 0
-                        : colors.includes(selectedColor)
-                )
-            );
+        /* Match the selected color identity */
+
+        let colorMatches = false;
+
+        if (selectedColor === "")
+        {
+            colorMatches = true;
+        }
+        else if (colors !== null)
+        {
+            if (selectedColor === "C")
+            {
+                /* Colorless only */
+
+                colorMatches =
+                    colors.length === 0;
+            }
+            else if (selectedColor === "mono")
+            {
+                /* Any card with exactly one color */
+
+                colorMatches =
+                    colors.length === 1;
+            }
+            else if (selectedColor.startsWith("mono:"))
+            {
+                /* One specific mono color */
+
+                const monoColor =
+                    selectedColor.slice(5);
+
+                colorMatches =
+                    colors.length === 1 &&
+                    colors[0] === monoColor;
+            }
+            else
+            {
+                /* Existing inclusive color filtering */
+
+                colorMatches =
+                    colors.includes(selectedColor);
+            }
+        }
 
         const manaMatches =
             selectedMana === "" ||
