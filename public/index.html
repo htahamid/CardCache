@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 
+
 <head>
     <meta charset="UTF-8">
 
@@ -8,6 +9,30 @@
           content="width=device-width, initial-scale=1.0">
 
     <title>CardCache</title>
+
+    <!-- Apply saved theme before the page renders -->
+
+    <script>
+        (function()
+        {
+            const savedTheme =
+                localStorage.getItem("cardcache-theme");
+
+            const systemPrefersLight =
+                window.matchMedia(
+                    "(prefers-color-scheme: light)"
+                ).matches;
+
+            const theme =
+                savedTheme ||
+                (systemPrefersLight ? "light" : "dark");
+
+            document.documentElement.setAttribute(
+                "data-theme",
+                theme
+            );
+        })();
+    </script>
 
     <link rel="stylesheet" href="css/style.css">
 </head>
@@ -78,15 +103,21 @@
 
         </div>
 
-        <nav>
+    <nav>
 
-            <a href="index.html">Collection</a>
+        <a href="index.html">
+            Collection
+        </a>
 
-            <a href="#">My Decks</a>
+        <a href="decks.html">
+            My Decks
+        </a>
 
-            <a href="#">Recommendations</a>
+        <a href="#">
+            Recommendations
+        </a>
 
-        </nav>
+    </nav>
 
     </header>
 
@@ -178,7 +209,50 @@
 
             <h3>Collection Value</h3>
 
-            <p id="collectionValue">$0.00</p>
+        <p id="collectionValue">—</p>
+
+        <div class="price-chart-controls">
+
+            <div
+                class="chart-range-buttons"
+                aria-label="Collection value date range"
+            >
+
+                <button type="button" class="chart-range-button"
+                        data-days="7">
+                    1W
+                </button>
+
+                <button type="button" class="chart-range-button active"
+                        data-days="30">
+                    30D
+                </button>
+
+                <button type="button" class="chart-range-button"
+                        data-days="60">
+                    60D
+                </button>
+
+                <button type="button" class="chart-range-button"
+                        data-days="365">
+                    1Y
+                </button>
+
+                <button type="button" class="chart-range-button"
+                        data-days="730">
+                    2Y
+                </button>
+
+            </div>
+
+            <button
+                type="button"
+                id="refreshPricesButton"
+            >
+                Refresh Prices
+            </button>
+
+        </div>
 
             <div class="chart-container">
 
@@ -187,7 +261,7 @@
             </div>
 
             <p id="chartMessage">
-                Import cards to begin tracking
+                Refresh prices to start tracking
                 your collection value.
             </p>
 
@@ -217,10 +291,122 @@
             </section>
         
         
+
+            <!-- =========================================
+                YOUR CARDS
+                ========================================= -->
+
             <section id="cardList">
 
                 <h2>Your Cards</h2>
-                <section id="cardList">
+
+                <!-- Add Card Button -->
+
+                <div class="add-card-toolbar">
+
+                    <button
+                        type="button"
+                        id="addCardButton"
+                    >
+                        + Add Card
+                    </button>
+
+                </div>
+
+
+                <!-- Scryfall Add Card Panel -->
+
+                <div id="addCardPanel" hidden>
+
+                    <h3>Add a Card</h3>
+
+                    <div class="scryfall-search-row">
+
+                        <input
+                            type="search"
+                            id="scryfallSearch"
+                            placeholder="Card name or set + number (e.g. Sol Ring fic/357)"
+                            aria-label="Search Magic cards"
+                        >
+
+                        <button
+                            type="button"
+                            id="scryfallSearchButton"
+                        >
+                            Search
+                        </button>
+
+                    </div>
+
+                    <p id="scryfallSearchStatus"></p>
+
+                    <!-- Matching card names -->
+
+                    <div id="scryfallResults"></div>
+
+
+                    <!-- Available printings -->
+
+                    <div id="printingSection" hidden>
+
+                        <h4>Choose a Printing</h4>
+
+                        <p id="printingStatus"></p>
+
+                        <div id="printingResults"></div>
+
+                        <button
+                            type="button"
+                            id="loadMorePrintings"
+                            hidden
+                        >
+                            Load More Printings
+                        </button>
+
+                    </div>
+
+
+                    <!-- Selected printing and quantity -->
+
+                    <div id="selectedCardSection" hidden>
+
+                        <h4>Selected Card</h4>
+
+                        <div id="selectedCardPreview"></div>
+
+                        <label for="cardFinish">
+                            Finish
+                        </label>
+
+                        <select id="cardFinish"></select>
+
+                        <label for="cardQuantity">
+                            Quantity
+                        </label>
+
+                        <input
+                            type="number"
+                            id="cardQuantity"
+                            min="1"
+                            step="1"
+                            value="1"
+                        >
+
+                        <button
+                            type="button"
+                            id="confirmAddCard"
+                        >
+                            Add to Collection
+                        </button>
+
+                        <p id="addCardStatus"></p>
+
+                    </div>
+
+                </div>
+
+
+                <!-- Search Your Existing Collection -->
 
                 <div class="collection-toolbar">
 
@@ -235,8 +421,13 @@
 
                 </div>
 
+
+                <!-- Your Saved Cards -->
+
                 <div id="collectionResults">
+
                     <p>No cards imported yet.</p>
+
                 </div>
 
             </section>
@@ -247,7 +438,15 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script src="js/theme.js"></script>
+
+    <script src="js/supabaseClient.js"></script>
+
     <script src="js/app.js"></script>
+
+
 
 </body>
 

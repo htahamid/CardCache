@@ -1,18 +1,4 @@
-/* =========================================
-   SUPABASE CONNECTION
-   ========================================= */
 
-const SUPABASE_URL =
-    "https://qkemxeppymcbgcmhioyo.supabase.co";
-
-const SUPABASE_KEY =
-    "sb_publishable_94oNcBwBsb0Dsny-uP1JzQ_deVm-_1Q";
-
-const supabaseClient =
-    window.supabase.createClient(
-        SUPABASE_URL,
-        SUPABASE_KEY
-    );
 
 /* =========================================
    COLLECTION IMPORT
@@ -35,6 +21,29 @@ const collectionSearch =
 
 const searchStatus =
     document.getElementById("searchStatus");
+
+const collectionValue =
+    document.getElementById("collectionValue");
+
+const chartMessage =
+    document.getElementById("chartMessage");
+
+const refreshPricesButton =
+    document.getElementById("refreshPricesButton");
+
+const priceChartCanvas =
+    document.getElementById("priceChart");
+
+let priceChartInstance = null;
+
+/* Selected graph range: 30 days by default */
+
+let selectedRangeDays = 30;
+
+const chartRangeButtons =
+    document.querySelectorAll(
+        ".chart-range-button"
+    );
 
 /* Collection loaded from Supabase */
 
@@ -226,12 +235,57 @@ function displayCollection()
         const row =
             document.createElement("tr");
 
-        /* Card name */
+        
+    /* =========================================
+    CARD NAME AND PRINTING
+    ========================================= */
 
-        const nameCell =
-            document.createElement("td");
+    const nameCell =
+        document.createElement("td");
 
-        nameCell.textContent = card.name;
+    /* Main card name */
+
+    const cardName =
+        document.createElement("div");
+
+    cardName.className =
+        "collection-card-name";
+
+    cardName.textContent =
+        card.name;
+
+    nameCell.appendChild(cardName);
+
+
+    /* Set name and collector number */
+
+    const printingInfo =
+        document.createElement("div");
+
+    printingInfo.className =
+        "collection-printing-info";
+
+    if (card.set_code)
+    {
+        const setName =
+            card.set_name ||
+            card.set_code.toUpperCase();
+
+        const collectorNumber =
+            card.collector_number || "?";
+
+        printingInfo.textContent =
+            setName +
+            " · #" +
+            collectorNumber;
+    }
+    else
+    {
+        printingInfo.textContent =
+            "Printing not specified";
+    }
+
+    nameCell.appendChild(printingInfo);
 
         /* Quantity controls */
 
@@ -371,7 +425,7 @@ function displayCollection()
             try
             {
                 await changeCloudQuantity(
-                    card.name,
+                    card.id,
                     newQuantity
                 );
 
@@ -427,7 +481,7 @@ function displayCollection()
                 try
                 {
                     await changeCloudQuantity(
-                        card.name,
+                        card.id,
                         newQuantity
                     );
 
@@ -522,7 +576,7 @@ function displayCollection()
                 try
                 {
                     await deleteCloudCard(
-                        card.name
+                        card.id
                     );
 
                     await loadCloudCollection();
@@ -582,22 +636,27 @@ async function loadCloudCollection()
 
         displayCollection();
 
+        /* Clear any previous user's value and graph */
+
+        await loadCollectionPricing();
+
         return;
     }
 
     const { data, error } =
         await supabaseClient
-            .from("collection")
-            .select("name, quantity")
+            .from("collection_entries")
+            .select(
+                "id, name, quantity, set_code, set_name, collector_number"
+                )
+            .eq("user_id", userData.user.id)
             .order("name");
 
     if (error)
     {
         console.error(error);
 
-        alert(
-            "Could not load your collection."
-        );
+        alert("Could not load your collection.");
 
         return;
     }
@@ -605,6 +664,8 @@ async function loadCloudCollection()
     collection = data;
 
     displayCollection();
+
+    await loadCollectionPricing();
 }
 
 /* Import Button */
@@ -670,134 +731,6 @@ importButton.addEventListener("click", async function()
         alert(error.message);
     }
 });
-
-
-
-/* =========================================
-   LIGHT / DARK MODE
-   ========================================= */
-
-const themeToggle =
-    document.getElementById("themeToggle");
-
-const savedTheme =
-    localStorage.getItem("cardcache-theme");
-
-const systemPrefersLight =
-    window.matchMedia(
-        "(prefers-color-scheme: light)"
-    ).matches;
-
-/* Choose Saved Theme or System Preference */
-
-let currentTheme =
-    savedTheme ||
-    (systemPrefersLight ? "light" : "dark");
-
-/* Apply Theme */
-
-function applyTheme(theme)
-{
-    document.documentElement.setAttribute(
-        "data-theme",
-        theme
-    );
-
-    const isLight = theme === "light";
-
-    themeToggle.setAttribute(
-        "aria-pressed",
-        String(isLight)
-    );
-
-    const buttonLabel = isLight
-        ? "Switch to dark mode"
-        : "Switch to light mode";
-
-    themeToggle.setAttribute(
-        "aria-label",
-        buttonLabel
-    );
-
-    themeToggle.setAttribute(
-        "title",
-        buttonLabel
-    );
-}
-
-/* Change Theme When Button Is Clicked */
-
-themeToggle.addEventListener("click", function()
-{
-    if (currentTheme === "dark")
-    {
-        currentTheme = "light";
-    }
-    else
-    {
-        currentTheme = "dark";
-    }
-
-    applyTheme(currentTheme);
-
-    localStorage.setItem(
-        "cardcache-theme",
-        currentTheme
-    );
-
-    console.log("Current theme:", currentTheme);
-});
-
-/* Restore Theme on Page Load */
-
-applyTheme(currentTheme);
-
-
-/* Update Chart Colors When Theme Changes */
-
-function updateChartTheme()
-{
-    const styles = getComputedStyle(
-        document.documentElement
-    );
-
-    const accent =
-        styles.getPropertyValue("--accent").trim();
-
-    const muted =
-        styles.getPropertyValue("--text-muted").trim();
-
-    const grid =
-        styles.getPropertyValue("--chart-grid").trim();
-
-    /* Update Line Color */
-
-    priceChart.data.datasets[0].borderColor =
-        accent;
-
-    priceChart.data.datasets[0].backgroundColor =
-        accent + "22";
-
-    /* Update Axis Colors */
-
-    priceChart.options.scales.x.ticks.color =
-        muted;
-
-    priceChart.options.scales.y.ticks.color =
-        muted;
-
-    /* Update Grid Colors */
-
-    priceChart.options.scales.x.grid = {
-        color: grid
-    };
-
-    priceChart.options.scales.y.grid = {
-        color: grid
-    };
-
-    priceChart.update();
-}
 
 
 /* =========================================
@@ -872,18 +805,6 @@ async function getCardPrinting(set, collectorNumber)
         return null;
     }
 }
-
-async function testCard()
-{
-    const card = await getCardPrinting(
-        "fic",
-        "357"
-    );
-
-    console.log(card);
-}
-
-testCard();
 
 /* =========================================
    USER AUTHENTICATION
@@ -968,11 +889,14 @@ document.getElementById("signOutButton")
 
     displayCollection();
 
+    await loadCollectionPricing();
+
     accountStatus.textContent =
         "Not signed in.";
 
     accountPassword.value = "";
 });
+
 
 /* =========================================
    SAVE COLLECTION TO SUPABASE
@@ -992,25 +916,87 @@ async function saveCloudCollection(cards)
 
     const userId = userData.user.id;
 
-    const rows = cards.map(function(card)
-    {
-        return {
-            user_id: userId,
-            name: card.name,
-            quantity: card.quantity
-        };
-    });
+    /* Get existing cards with unknown printings */
 
-    const { error } =
+    const { data: existingCards, error: loadError } =
         await supabaseClient
-            .from("collection")
-            .upsert(rows, {
-                onConflict: "user_id,name"
-            });
+            .from("collection_entries")
+            .select("id, name")
+            .eq("user_id", userId)
+            .is("scryfall_id", null);
 
-    if (error)
+    if (loadError)
     {
-        throw error;
+        throw loadError;
+    }
+
+    /* Match existing entries by name */
+
+    const existingMap = new Map();
+
+    for (const card of existingCards)
+    {
+        existingMap.set(
+            card.name.toLowerCase(),
+            card.id
+        );
+    }
+
+    /* Prepare new entries */
+
+    const newCards = [];
+
+    for (const card of cards)
+    {
+        const key =
+            card.name.toLowerCase();
+
+        const existingId =
+            existingMap.get(key);
+
+        if (existingId)
+        {
+            /* Update the existing unresolved card */
+
+            const { error } =
+                await supabaseClient
+                    .from("collection_entries")
+                    .update({
+                        quantity: card.quantity
+                    })
+                    .eq("id", existingId)
+                    .eq("user_id", userId);
+
+            if (error)
+            {
+                throw error;
+            }
+        }
+        else
+        {
+            /* Create a new unresolved entry */
+
+            newCards.push({
+                user_id: userId,
+                name: card.name,
+                quantity: card.quantity
+            });
+        }
+    }
+
+    /* Insert the new entries together */
+
+    if (newCards.length > 0)
+    {
+        const { error } =
+            await supabaseClient
+                .from("collection_entries")
+                .insert(newCards);
+
+        if (error)
+        {
+            throw error;
+        }
     }
 }
 
@@ -1019,15 +1005,15 @@ async function saveCloudCollection(cards)
    ========================================= */
 
 async function changeCloudQuantity(
-    cardName,
+    entryId,
     newQuantity
 )
 {
-    if (!Number.isInteger(newQuantity) ||
+    if (!Number.isSafeInteger(newQuantity) ||
         newQuantity < 1)
     {
         throw new Error(
-            "Quantity must be at least 1."
+            "Quantity must be a whole number of at least 1."
         );
     }
 
@@ -1043,19 +1029,13 @@ async function changeCloudQuantity(
 
     const { data, error } =
         await supabaseClient
-            .from("collection")
+            .from("collection_entries")
             .update({
                 quantity: newQuantity
             })
-            .eq(
-                "user_id",
-                userData.user.id
-            )
-            .eq(
-                "name",
-                cardName
-            )
-            .select("name");
+            .eq("id", entryId)
+            .eq("user_id", userData.user.id)
+            .select("id");
 
     if (error)
     {
@@ -1065,7 +1045,45 @@ async function changeCloudQuantity(
     if (!data || data.length === 0)
     {
         throw new Error(
-            "Card was not found in your collection."
+            "Collection entry was not found."
+        );
+    }
+}
+
+
+/* =========================================
+   DELETE COLLECTION ENTRY
+   ========================================= */
+
+async function deleteCloudCard(entryId)
+{
+    const { data: userData, error: userError } =
+        await supabaseClient.auth.getUser();
+
+    if (userError || !userData.user)
+    {
+        throw new Error(
+            "Please sign in to delete cards."
+        );
+    }
+
+    const { data, error } =
+        await supabaseClient
+            .from("collection_entries")
+            .delete()
+            .eq("id", entryId)
+            .eq("user_id", userData.user.id)
+            .select("id");
+
+    if (error)
+    {
+        throw error;
+    }
+
+    if (!data || data.length === 0)
+    {
+        throw new Error(
+            "Collection entry was not found."
         );
     }
 }
@@ -1147,4 +1165,1135 @@ async function getCardByName(cardName)
 
         return null;
     }
+}
+
+
+/* =========================================
+   MANUALLY ADD CARDS
+   ========================================= */
+
+const addCardButton =
+    document.getElementById("addCardButton");
+
+const addCardPanel =
+    document.getElementById("addCardPanel");
+
+const scryfallSearch =
+    document.getElementById("scryfallSearch");
+
+const scryfallSearchButton =
+    document.getElementById("scryfallSearchButton");
+
+const scryfallSearchStatus =
+    document.getElementById("scryfallSearchStatus");
+
+const scryfallResults =
+    document.getElementById("scryfallResults");
+
+const printingSection =
+    document.getElementById("printingSection");
+
+const printingStatus =
+    document.getElementById("printingStatus");
+
+const printingResults =
+    document.getElementById("printingResults");
+
+const loadMorePrintings =
+    document.getElementById("loadMorePrintings");
+
+const selectedCardSection =
+    document.getElementById("selectedCardSection");
+
+const selectedCardPreview =
+    document.getElementById("selectedCardPreview");
+
+const cardFinish =
+    document.getElementById("cardFinish");
+
+const cardQuantity =
+    document.getElementById("cardQuantity");
+
+const confirmAddCard =
+    document.getElementById("confirmAddCard");
+
+const addCardStatus =
+    document.getElementById("addCardStatus");
+
+
+/* Currently selected Scryfall printing */
+
+let selectedPrinting = null;
+
+/* Pagination for cards with many printings */
+
+let nextPrintingsPage = null;
+
+
+/* =========================================
+   OPEN / CLOSE ADD CARD PANEL
+   ========================================= */
+
+addCardButton.addEventListener(
+    "click",
+    function()
+    {
+        addCardPanel.hidden =
+            !addCardPanel.hidden;
+
+        if (!addCardPanel.hidden)
+        {
+            scryfallSearch.focus();
+        }
+    }
+);
+
+
+/* =========================================
+   SEARCH CARD NAMES
+   ========================================= */
+
+async function searchScryfallCards()
+{
+    const searchText =
+        scryfallSearch.value.trim();
+
+    
+    /* =========================================
+    CHECK FOR SPECIFIC PRINTING
+    ========================================= */
+
+    /* Examples:
+    fic/357
+    Sol Ring fic/357
+    */
+
+    const directMatch = searchText.match(
+        /^(?:(.+?)\s+)?([a-z0-9]{2,8})\/([0-9][0-9a-z★*-]*)$/i
+    );
+
+    if (directMatch)
+    {
+        const cardName =
+            directMatch[1]?.trim() || "";
+
+        const setCode =
+            directMatch[2].toLowerCase();
+
+        const collectorNumber =
+            directMatch[3];
+
+        await searchExactPrinting(
+            setCode,
+            collectorNumber,
+            cardName
+        );
+
+        return;
+    }
+
+
+    /* =========================================
+    CHECK FOR CARD NAME + NUMBER
+    ========================================= */
+
+    /* Example: Sol Ring 2783 */
+
+    const nameNumberMatch = searchText.match(
+        /^(.+?)\s+([0-9][0-9a-z★*-]*)$/i
+    );
+
+    if (nameNumberMatch)
+    {
+        const cardName =
+            nameNumberMatch[1].trim();
+
+        const collectorNumber =
+            nameNumberMatch[2];
+
+        await searchCardByNameAndNumber(
+            cardName,
+            collectorNumber
+        );
+
+        return;
+    }
+
+    
+    
+    if (searchText.length < 2)
+    {
+        scryfallSearchStatus.textContent =
+            "Enter at least 2 characters.";
+
+        return;
+    }
+
+    scryfallResults.replaceChildren();
+
+    printingSection.hidden = true;
+
+    selectedCardSection.hidden = true;
+
+    selectedPrinting = null;
+
+    scryfallSearchButton.disabled = true;
+
+    scryfallSearchStatus.textContent =
+        "Searching Scryfall...";
+
+    try
+    {
+        const url =
+            "https://api.scryfall.com/cards/autocomplete?q=" +
+            encodeURIComponent(searchText);
+
+        const response = await fetch(url);
+
+        if (!response.ok)
+        {
+            throw new Error(
+                "Scryfall search failed: " +
+                response.status
+            );
+        }
+
+        const result = await response.json();
+
+        if (result.data.length === 0)
+        {
+            scryfallSearchStatus.textContent =
+                "No matching cards found.";
+
+            return;
+        }
+
+        scryfallSearchStatus.textContent =
+            "Select a card:";
+
+        for (const cardName of result.data)
+        {
+            const button =
+                document.createElement("button");
+
+            button.type = "button";
+
+            button.className =
+                "scryfall-name-result";
+
+            button.textContent =
+                cardName;
+
+            button.addEventListener(
+                "click",
+                function()
+                {
+                    showCardPrintings(cardName);
+                }
+            );
+
+            scryfallResults.appendChild(
+                button
+            );
+        }
+    }
+    catch (error)
+    {
+        console.error(error);
+
+        scryfallSearchStatus.textContent =
+            error.message;
+    }
+    finally
+    {
+        scryfallSearchButton.disabled =
+            false;
+    }
+}
+
+
+/* =========================================
+   SEARCH CARD NAME + COLLECTOR NUMBER
+   ========================================= */
+
+async function searchCardByNameAndNumber(
+    cardName,
+    collectorNumber
+)
+{
+    scryfallResults.replaceChildren();
+
+    selectedCardSection.hidden = true;
+
+    selectedPrinting = null;
+
+    printingSection.hidden = false;
+
+    printingResults.replaceChildren();
+
+    printingStatus.textContent =
+        "Searching for " +
+        cardName + " #" +
+        collectorNumber + "...";
+
+    /* Search exact name and collector number */
+
+    const query =
+        '!"' + cardName + '" cn:' +
+        collectorNumber;
+
+    const url =
+        "https://api.scryfall.com/cards/search?q=" +
+        encodeURIComponent(query) +
+        "&unique=prints";
+
+    nextPrintingsPage = null;
+
+    await loadPrintingPage(url);
+}
+
+/* Search Button */
+
+scryfallSearchButton.addEventListener(
+    "click",
+    searchScryfallCards
+);
+
+
+/* Allow Enter in the search field */
+
+scryfallSearch.addEventListener(
+    "keydown",
+    function(event)
+    {
+        if (event.key === "Enter")
+        {
+            event.preventDefault();
+
+            searchScryfallCards();
+        }
+    }
+);
+
+
+/* =========================================
+   FIND AVAILABLE PRINTINGS
+   ========================================= */
+
+async function showCardPrintings(cardName)
+{
+    printingSection.hidden = false;
+
+    selectedCardSection.hidden = true;
+
+    selectedPrinting = null;
+
+    printingResults.replaceChildren();
+
+    printingStatus.textContent =
+        "Loading printings for " +
+        cardName + "...";
+
+    /* Exact card-name search */
+
+    const query =
+        '!"' + cardName + '"';
+
+    const url =
+        "https://api.scryfall.com/cards/search?q=" +
+        encodeURIComponent(query) +
+        "&unique=prints&order=released&dir=desc";
+
+    nextPrintingsPage = null;
+
+    await loadPrintingPage(url);
+}
+
+
+/* =========================================
+   LOAD A PAGE OF PRINTINGS
+   ========================================= */
+
+async function loadPrintingPage(url)
+{
+    loadMorePrintings.hidden = true;
+
+    try
+    {
+        const response = await fetch(url);
+
+        if (!response.ok)
+        {
+            throw new Error(
+                "Could not load printings: " +
+                response.status
+            );
+        }
+
+        const result = await response.json();
+
+        for (const printing of result.data)
+        {
+            const button =
+                document.createElement("button");
+
+            button.type = "button";
+
+            button.className =
+                "printing-option";
+
+            const imageURL =
+                printing.image_uris?.small ??
+                printing.card_faces?.[0]?.image_uris?.small ??
+                null;
+
+            if (imageURL)
+            {
+                const image =
+                    document.createElement("img");
+
+                image.src = imageURL;
+
+                image.alt =
+                    printing.name;
+
+                button.appendChild(image);
+            }
+
+            const details =
+                document.createElement("span");
+
+            details.textContent =
+                printing.set_name +
+                " — #" +
+                printing.collector_number +
+                " — " +
+                printing.rarity;
+
+            button.appendChild(details);
+
+            button.addEventListener(
+                "click",
+                function()
+                {
+                    selectCardPrinting(
+                        printing
+                    );
+                }
+            );
+
+            printingResults.appendChild(
+                button
+            );
+        }
+
+        printingStatus.textContent =
+            "Choose the set and artwork you own.";
+
+        nextPrintingsPage =
+            result.has_more
+                ? result.next_page
+                : null;
+
+        loadMorePrintings.hidden =
+            !nextPrintingsPage;
+    }
+    catch (error)
+    {
+        console.error(error);
+
+        printingStatus.textContent =
+            error.message;
+    }
+}
+
+
+/* Load additional printings */
+
+loadMorePrintings.addEventListener(
+    "click",
+    async function()
+    {
+        if (!nextPrintingsPage)
+        {
+            return;
+        }
+
+        const url = nextPrintingsPage;
+
+        nextPrintingsPage = null;
+
+        await loadPrintingPage(url);
+    }
+);
+
+
+/* =========================================
+   SELECT AN EXACT PRINTING
+   ========================================= */
+
+function selectCardPrinting(printing)
+{
+    selectedPrinting = printing;
+
+    selectedCardSection.hidden = false;
+
+    selectedCardPreview.replaceChildren();
+
+    addCardStatus.textContent = "";
+
+    /* Card artwork */
+
+    const imageURL =
+        printing.image_uris?.normal ??
+        printing.card_faces?.[0]?.image_uris?.normal ??
+        null;
+
+    if (imageURL)
+    {
+        const image =
+            document.createElement("img");
+
+        image.src = imageURL;
+
+        image.alt = printing.name;
+
+        selectedCardPreview.appendChild(
+            image
+        );
+    }
+
+    /* Selected printing information */
+
+    const description =
+        document.createElement("p");
+
+    description.textContent =
+        printing.name +
+        " — " +
+        printing.set_name +
+        " #" +
+        printing.collector_number +
+        " — " +
+        printing.rarity;
+
+    selectedCardPreview.appendChild(
+        description
+    );
+
+    /* Display available finishes */
+
+    cardFinish.replaceChildren();
+
+    for (const finish of printing.finishes)
+    {
+        const option =
+            document.createElement("option");
+
+        option.value = finish;
+
+        option.textContent = finish;
+
+        cardFinish.appendChild(option);
+    }
+
+    cardQuantity.value = "1";
+
+    selectedCardSection.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest"
+    });
+}
+
+
+/* =========================================
+   ADD PRINTING TO SUPABASE
+   ========================================= */
+
+confirmAddCard.addEventListener(
+    "click",
+    async function()
+    {
+        if (!selectedPrinting)
+        {
+            return;
+        }
+
+        const quantity =
+            Number(cardQuantity.value);
+
+        if (!Number.isSafeInteger(quantity) ||
+            quantity < 1)
+        {
+            addCardStatus.textContent =
+                "Enter a whole number of at least 1.";
+
+            return;
+        }
+
+        confirmAddCard.disabled = true;
+
+        addCardStatus.textContent =
+            "Saving card...";
+
+        try
+        {
+            await addPrintingToCollection(
+                selectedPrinting,
+                cardFinish.value,
+                quantity
+            );
+
+            await loadCloudCollection();
+
+            addCardStatus.textContent =
+                "Card added successfully!";
+        }
+        catch (error)
+        {
+            console.error(error);
+
+            addCardStatus.textContent =
+                "Could not add card: " +
+                error.message;
+        }
+        finally
+        {
+            confirmAddCard.disabled = false;
+        }
+    }
+);
+
+/* =========================================
+   DIRECT PRINTING LOOKUP
+   ========================================= */
+
+async function searchExactPrinting(
+    setCode,
+    collectorNumber,
+    expectedName = ""
+)
+{
+    scryfallSearchStatus.textContent =
+        "Finding exact printing...";
+
+    scryfallResults.replaceChildren();
+
+    printingSection.hidden = true;
+
+    selectedCardSection.hidden = true;
+
+    selectedPrinting = null;
+
+    try
+    {
+        const url =
+            "https://api.scryfall.com/cards/" +
+            encodeURIComponent(setCode) + "/" +
+            encodeURIComponent(collectorNumber);
+
+        const response = await fetch(url);
+
+        if (!response.ok)
+        {
+            throw new Error(
+                "No printing found for " +
+                setCode + " #" + collectorNumber
+            );
+        }
+
+        const printing =
+            await response.json();
+
+        /* Check the name if one was supplied */
+
+        if (expectedName &&
+            printing.name.toLowerCase() !==
+            expectedName.toLowerCase())
+        {
+            throw new Error(
+                "That set and number belong to " +
+                printing.name + ", not " +
+                expectedName + "."
+            );
+        }
+
+        scryfallSearchStatus.textContent =
+            "Exact printing found!";
+
+        /* Use your existing selection interface */
+
+        selectCardPrinting(printing);
+    }
+    catch (error)
+    {
+        console.error(error);
+
+        scryfallSearchStatus.textContent =
+            error.message;
+    }
+}
+
+/* =========================================
+   SAVE EXACT PRINTING
+   ========================================= */
+
+async function addPrintingToCollection(
+    printing,
+    finish,
+    quantity
+)
+{
+    const { data: userData, error: userError } =
+        await supabaseClient.auth.getUser();
+
+    if (userError || !userData.user)
+    {
+        throw new Error(
+            "Please sign in before adding cards."
+        );
+    }
+
+    const userId =
+        userData.user.id;
+
+    /* Does this user already own this printing? */
+
+    const { data: existing, error: findError } =
+        await supabaseClient
+            .from("collection_entries")
+            .select("id, quantity")
+            .eq("user_id", userId)
+            .eq("scryfall_id", printing.id)
+            .eq("finish", finish)
+            .maybeSingle();
+
+    if (findError)
+    {
+        throw findError;
+    }
+
+    if (existing)
+    {
+        /* Add to the existing quantity */
+
+        const { error } =
+            await supabaseClient
+                .from("collection_entries")
+                .update({
+                    quantity:
+                        existing.quantity + quantity
+                })
+                .eq("id", existing.id)
+                .eq("user_id", userId);
+
+        if (error)
+        {
+            throw error;
+        }
+
+        return;
+    }
+
+    /* Choose the correct price for the finish */
+
+    let price = null;
+
+    if (finish === "nonfoil")
+    {
+        price = printing.prices.usd;
+    }
+    else if (finish === "foil")
+    {
+        price = printing.prices.usd_foil;
+    }
+    else if (finish === "etched")
+    {
+        price = printing.prices.usd_etched;
+    }
+
+    const imageURL =
+        printing.image_uris?.normal ??
+        printing.card_faces?.[0]?.image_uris?.normal ??
+        null;
+
+    /* Create a new printing-specific entry */
+
+    const newEntry = {
+        user_id: userId,
+
+        name: printing.name,
+
+        quantity: quantity,
+
+        scryfall_id: printing.id,
+
+        oracle_id:
+            printing.oracle_id ?? null,
+
+        set_code: printing.set,
+
+        set_name: printing.set_name,
+
+        collector_number:
+            printing.collector_number,
+
+        finish: finish,
+
+        rarity: printing.rarity,
+
+        color_identity:
+            printing.color_identity,
+
+        mana_value: printing.cmc,
+
+        type_line: printing.type_line,
+
+        image_url: imageURL,
+
+        price_usd: price
+            ? Number(price)
+            : null
+    };
+
+    const { error } =
+        await supabaseClient
+            .from("collection_entries")
+            .insert(newEntry);
+
+    if (error)
+    {
+        throw error;
+    }
+}
+
+/* =========================================
+   REFRESH COLLECTION PRICES
+   ========================================= */
+
+refreshPricesButton.addEventListener(
+    "click",
+    async function()
+    {
+        refreshPricesButton.disabled = true;
+
+        refreshPricesButton.textContent =
+            "Refreshing...";
+
+        chartMessage.textContent =
+            "Checking your collection's prices...";
+
+        try
+        {
+            const { data, error } =
+                await supabaseClient.functions.invoke(
+                    "refresh-collection-prices"
+                );
+
+            if (error)
+            {
+                throw error;
+            }
+
+            /* If we successfully refreshed,
+               reload the collection's value
+               and graph from Supabase. */
+
+            await loadCollectionPricing();
+
+            console.log(
+                "Price refresh complete:",
+                data
+            );
+        }
+        catch (error)
+        {
+            console.error(error);
+
+            chartMessage.textContent =
+                "Could not refresh prices. " +
+                "Check the console and Edge Function logs.";
+        }
+        finally
+        {
+            refreshPricesButton.disabled = false;
+
+            refreshPricesButton.textContent =
+                "Refresh Prices";
+        }
+    }
+);
+
+/* =========================================
+   DISPLAY COLLECTION PRICING
+   ========================================= */
+
+async function loadCollectionPricing()
+{
+    const { data: userData, error: userError } =
+        await supabaseClient.auth.getUser();
+
+    if (userError || !userData.user)
+    {
+        collectionValue.textContent = "—";
+
+        chartMessage.textContent =
+            "Sign in to view your collection value.";
+
+        if (priceChartInstance)
+        {
+            priceChartInstance.destroy();
+
+            priceChartInstance = null;
+        }
+
+        return;
+    }
+
+    const { data, error } =
+        await supabaseClient
+            .from("collection_value_snapshots")
+            .select(
+                "snapshot_date, total_value_usd, priced_copies, unpriced_copies"
+            )
+            .eq(
+                "user_id",
+                userData.user.id
+            )
+            .order(
+                "snapshot_date",
+                { ascending: false }
+            )
+            .limit(750);
+
+    if (error)
+    {
+        throw error;
+    }
+
+    if (data.length === 0)
+    {
+        collectionValue.textContent = "—";
+
+        chartMessage.textContent =
+            "Refresh Prices to start " +
+            "tracking your collection value.";
+
+        return;
+    }
+
+    /* =========================================
+    FILTER COLLECTION HISTORY BY DATE
+    ========================================= */
+
+    /* Supabase returned newest first */
+
+    const allSnapshots =
+        [...data].reverse();
+
+    /* Latest saved value, regardless of graph range */
+
+    const latest =
+        allSnapshots[
+            allSnapshots.length - 1
+        ];
+
+    /* Calculate the first day to display */
+
+    const todayUTC =
+        new Date().toISOString().slice(0, 10);
+
+    const cutoffDate =
+        new Date(
+            todayUTC + "T00:00:00Z"
+        );
+
+    cutoffDate.setUTCDate(
+        cutoffDate.getUTCDate() -
+        (selectedRangeDays - 1)
+    );
+
+    const cutoffText =
+        cutoffDate.toISOString().slice(0, 10);
+
+    /* Keep snapshots within the chosen range */
+
+    const snapshots =
+        allSnapshots.filter(
+            function(snapshot)
+            {
+                return snapshot.snapshot_date >=
+                    cutoffText;
+            }
+        );
+
+    collectionValue.textContent =
+        Number(
+            latest.total_value_usd
+        ).toLocaleString(
+            "en-US",
+            {
+                style: "currency",
+                currency: "USD"
+            }
+        );
+
+    const firstValue =
+        Number(
+            snapshots[0].total_value_usd
+        );
+
+    const currentValue =
+        Number(
+            latest.total_value_usd
+        );
+
+    const change =
+        currentValue - firstValue;
+
+    const changeText =
+        change.toLocaleString(
+            "en-US",
+            {
+                style: "currency",
+                currency: "USD",
+                signDisplay: "always"
+            }
+        );
+
+    /* Nothing recorded in this date range */
+
+    if (snapshots.length === 0)
+    {
+        if (priceChartInstance)
+        {
+            priceChartInstance.destroy();
+
+            priceChartInstance = null;
+        }
+
+        chartMessage.textContent =
+            "No collection history recorded " +
+            "in this date range.";
+
+        return;
+    }
+
+    chartMessage.textContent =
+        latest.priced_copies +
+        " priced copies · " +
+        latest.unpriced_copies +
+        " unpriced copies. " +
+        "Change over displayed history: " +
+        changeText +
+        ".";
+
+    /* Remove previous chart before redrawing */
+
+    if (priceChartInstance)
+    {
+        priceChartInstance.destroy();
+    }
+
+    priceChartInstance = new Chart(
+        priceChartCanvas,
+        {
+            type: "line",
+
+            data: {
+                labels:
+                    snapshots.map(
+                        item =>
+                            item.snapshot_date
+                    ),
+
+                datasets: [
+                    {
+                        label:
+                            "Collection Value (USD)",
+
+                        data:
+                            snapshots.map(
+                                item =>
+                                    Number(
+                                        item.total_value_usd
+                                    )
+                            ),
+
+                        tension: 0.2,
+
+                        fill: false
+                    }
+                ]
+            },
+
+            options: {
+                responsive: true,
+
+                maintainAspectRatio: false,
+
+                scales: {
+
+                    x: {
+                        ticks: {
+                            autoSkip: true,
+                            maxTicksLimit: 6,
+                            maxRotation: 0
+                        }
+                    },
+
+                    y: {
+                        ticks: {
+                            callback:
+                                value =>
+                                    "$" + value
+                        }
+                    }
+
+                }
+            }
+        }
+    );
+}
+
+/* =========================================
+   COLLECTION GRAPH DATE RANGES
+   ========================================= */
+
+for (const button of chartRangeButtons)
+{
+    button.addEventListener(
+        "click",
+        async function()
+        {
+            /* Update selected range */
+
+            selectedRangeDays =
+                Number(button.dataset.days);
+
+            /* Update active button styling */
+
+            for (const otherButton of chartRangeButtons)
+            {
+                otherButton.classList.toggle(
+                    "active",
+                    otherButton === button
+                );
+            }
+
+            /* Redraw with selected dates */
+
+            try
+            {
+                await loadCollectionPricing();
+            }
+            catch (error)
+            {
+                console.error(error);
+
+                chartMessage.textContent =
+                    "Could not load collection history.";
+            }
+        }
+    );
 }
