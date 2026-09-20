@@ -36,6 +36,99 @@ const priceChartCanvas =
 
 let priceChartInstance = null;
 
+/* =========================================
+   COLLECTION FILTER CONTROLS
+   ========================================= */
+
+const collectionFilters =
+    document.createElement("div");
+
+collectionFilters.className =
+    "collection-card-filters";
+
+collectionFilters.innerHTML = `
+    <label>
+        Color identity
+        <select id="collectionColorFilter">
+            <option value="">All colors</option>
+            <option value="W">White</option>
+            <option value="U">Blue</option>
+            <option value="B">Black</option>
+            <option value="R">Red</option>
+            <option value="G">Green</option>
+            <option value="C">Colorless</option>
+        </select>
+    </label>
+
+    <label>
+        Mana value
+        <select id="collectionManaFilter">
+            <option value="">Any mana value</option>
+            ${Array.from(
+                { length: 11 },
+                (_, value) =>
+                    `<option value="${value}">
+                        ${value}
+                    </option>`
+            ).join("")}
+            <option value="11+">11+</option>
+        </select>
+    </label>
+
+    <label>
+        Rarity
+        <select id="collectionRarityFilter">
+            <option value="">All rarities</option>
+            <option value="common">Common</option>
+            <option value="uncommon">Uncommon</option>
+            <option value="rare">Rare</option>
+            <option value="mythic">Mythic Rare</option>
+        </select>
+    </label>
+`;
+
+/* Collapsible collection filter menu */
+
+const collectionFilterMenu =
+    document.createElement("details");
+
+collectionFilterMenu.className =
+    "collection-filter-menu";
+
+const collectionFilterToggle =
+    document.createElement("summary");
+
+collectionFilterToggle.textContent =
+    "⚙ Filters";
+
+collectionFilterMenu.appendChild(
+    collectionFilterToggle
+);
+
+collectionFilterMenu.appendChild(
+    collectionFilters
+);
+
+collectionSearch.insertAdjacentElement(
+    "afterend",
+    collectionFilterMenu
+);
+
+const collectionColorFilter =
+    document.getElementById(
+        "collectionColorFilter"
+    );
+
+const collectionManaFilter =
+    document.getElementById(
+        "collectionManaFilter"
+    );
+
+const collectionRarityFilter =
+    document.getElementById(
+        "collectionRarityFilter"
+    );
+
 /* Selected graph range: 30 days by default */
 
 let selectedRangeDays = 30;
@@ -45,10 +138,212 @@ const chartRangeButtons =
         ".chart-range-button"
     );
 
-/* Collection loaded from Supabase */
 
-let collection = [];
+/* Collection table pagination */
 
+let collectionPage = 1;
+let collectionPageSize = 25;
+
+/* =========================================
+   PRICES DISPLAYED IN YOUR COLLECTION
+   ========================================= */
+
+let collectionPrices = new Map();
+
+
+function collectionPriceKey(card)
+{
+    return (
+        card.scryfall_id +
+        "|" +
+        (card.finish || "nonfoil")
+    );
+}
+
+
+function getCollectionCardPrice(card)
+{
+    if (!card.scryfall_id)
+    {
+        return null;
+    }
+
+    const price =
+        collectionPrices.get(
+            collectionPriceKey(card)
+        );
+
+    return price === undefined
+        ? null
+        : price;
+}
+
+
+function formatCollectionMoney(value)
+{
+    return value.toLocaleString(
+        "en-US",
+        {
+            style: "currency",
+            currency: "USD"
+        }
+    );
+}
+
+
+/* Load saved prices, then fill gaps
+   using each exact Scryfall printing */
+
+async function loadCollectionCardPrices()
+{
+    collectionPrices = new Map();
+
+    const ids = [
+        ...new Set(
+            collection
+                .filter(card => card.scryfall_id)
+                .map(card => card.scryfall_id)
+        )
+    ];
+
+    /* Read existing Supabase prices */
+
+    for (let start = 0; start < ids.length; start += 75)
+    {
+        const batch =
+            ids.slice(start, start + 75);
+
+        const { data, error } =
+            await supabaseClient
+                .from("card_prices")
+                .select(
+                    "scryfall_id, finish, price_usd"
+                )
+                .in("scryfall_id", batch);
+
+        if (error)
+        {
+            throw error;
+        }
+
+        for (const row of data)
+        {
+            collectionPrices.set(
+                row.scryfall_id + "|" + row.finish,
+
+                row.price_usd === null
+                    ? null
+                    : Number(row.price_usd)
+            );
+        }
+    }
+
+    /* Identify owned printings with
+       no usable saved price */
+
+    const missingIds = [
+        ...new Set(
+            collection
+                .filter(card =>
+                    card.scryfall_id &&
+                    getCollectionCardPrice(card) === null
+                )
+                .map(card => card.scryfall_id)
+        )
+    ];
+
+    /* Ask Scryfall for exact missing IDs */
+
+    for (
+        let start = 0;
+        start < missingIds.length;
+        start += 75
+    )
+    {
+        const batch =
+            missingIds.slice(start, start + 75);
+
+        const response = await fetch(
+            "https://api.scryfall.com/cards/collection",
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type":
+                        "application/json",
+
+                    "Accept":
+                        "application/json"
+                },
+
+                body: JSON.stringify({
+                    identifiers:
+                        batch.map(id => ({ id: id }))
+                })
+            }
+        );
+
+        if (!response.ok)
+        {
+            console.warn(
+                "Could not retrieve missing collection prices:",
+                response.status
+            );
+
+            continue;
+        }
+
+        const result =
+            await response.json();
+
+        for (const printing of result.data)
+        {
+            const finishPrices = {
+                nonfoil: printing.prices.usd,
+                foil: printing.prices.usd_foil,
+                etched: printing.prices.usd_etched
+            };
+
+            for (
+                const [finish, rawPrice]
+                of Object.entries(finishPrices)
+            )
+            {
+                const key =
+                    printing.id + "|" + finish;
+
+                /* Keep an existing valid price */
+
+                if (
+                    collectionPrices.has(key) &&
+                    collectionPrices.get(key) !== null
+                )
+                {
+                    continue;
+                }
+
+                collectionPrices.set(
+                    key,
+
+                    rawPrice === null ||
+                    rawPrice === undefined
+                        ? null
+                        : Number(rawPrice)
+                );
+            }
+        }
+
+        /* Avoid sending large batches
+           back-to-back */
+
+        if (start + 75 < missingIds.length)
+        {
+            await new Promise(
+                resolve => setTimeout(resolve, 650)
+            );
+        }
+    }
+}
 
 /* Read One CSV Row */
 
@@ -93,7 +388,9 @@ function parseCSVLine(line)
 }
 
 
-/* Convert CSV Text Into Card Objects */
+/* =========================================
+   PARSE PRINTING-AWARE COLLECTION CSV
+   ========================================= */
 
 function parseCollectionCSV(csvText)
 {
@@ -105,55 +402,233 @@ function parseCollectionCSV(csvText)
     if (lines.length < 2)
     {
         throw new Error(
-            "The CSV file must contain a header and cards."
+            "CSV must contain a header and cards."
         );
     }
 
     const headers = parseCSVLine(lines[0])
-        .map(header => header.toLowerCase());
+        .map(header => header.trim().toLowerCase());
 
-    const nameIndex =
-        headers.indexOf("name");
+    const requiredHeaders = [
+        "name",
+        "quantity",
+        "set_code",
+        "collector_number",
+        "finish"
+    ];
 
-    const quantityIndex =
-        headers.indexOf("quantity");
-
-    if (nameIndex === -1 || quantityIndex === -1)
+    for (const header of requiredHeaders)
     {
-        throw new Error(
-            "CSV must contain name and quantity columns."
-        );
+        if (!headers.includes(header))
+        {
+            throw new Error(
+                "CSV is missing column: " + header
+            );
+        }
     }
 
     const importedCards = [];
 
     for (let i = 1; i < lines.length; i++)
     {
-        const values = parseCSVLine(lines[i]);
+        const values =
+            parseCSVLine(lines[i]);
 
-        const name = values[nameIndex];
+        function column(header)
+        {
+            return (
+                values[headers.indexOf(header)] || ""
+            ).trim();
+        }
+
+        const name =
+            column("name");
 
         const quantity =
-            Number(values[quantityIndex]);
+            Number(column("quantity"));
+
+        const setCode =
+            column("set_code").toLowerCase();
+
+        const collectorNumber =
+            column("collector_number");
+
+        const finish =
+            column("finish").toLowerCase();
 
         if (!name ||
-            !Number.isInteger(quantity) ||
-            quantity <= 0)
+            !Number.isSafeInteger(quantity) ||
+            quantity < 1 ||
+            !setCode ||
+            !collectorNumber)
         {
             throw new Error(
-                "Invalid card on CSV line " + (i + 1)
+                "Invalid card on CSV line " +
+                (i + 1)
+            );
+        }
+
+        if (![
+            "nonfoil",
+            "foil",
+            "etched"
+        ].includes(finish))
+        {
+            throw new Error(
+                "Invalid finish on CSV line " +
+                (i + 1) +
+                ". Use nonfoil, foil, or etched."
             );
         }
 
         importedCards.push({
             name: name,
-            quantity: quantity
+            quantity: quantity,
+            set_code: setCode,
+            collector_number: collectorNumber,
+            finish: finish
         });
     }
 
     return importedCards;
 }
 
+/* =========================================
+   VERIFY IMPORTED PRINTINGS
+   ========================================= */
+
+async function verifyImportedPrintings(cards)
+{
+    const verifiedCards = [];
+
+    for (
+        let start = 0;
+        start < cards.length;
+        start += 75
+    )
+    {
+        const batch =
+            cards.slice(start, start + 75);
+
+        const response = await fetch(
+            "https://api.scryfall.com/cards/collection",
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type":
+                        "application/json",
+
+                    "Accept":
+                        "application/json"
+                },
+
+                body: JSON.stringify({
+                    identifiers:
+                        batch.map(function(card)
+                        {
+                            return {
+                                set: card.set_code,
+
+                                collector_number:
+                                    card.collector_number
+                            };
+                        })
+                })
+            }
+        );
+
+        if (!response.ok)
+        {
+            throw new Error(
+                "Scryfall lookup failed: " +
+                response.status
+            );
+        }
+
+        const result =
+            await response.json();
+
+        for (const imported of batch)
+        {
+            const printing =
+                result.data.find(function(card)
+                {
+                    return (
+                        card.set.toLowerCase() ===
+                            imported.set_code &&
+
+                        card.collector_number
+                            .toLowerCase() ===
+                            imported.collector_number
+                                .toLowerCase()
+                    );
+                });
+
+            if (!printing)
+            {
+                throw new Error(
+                    "Printing not found: " +
+                    imported.name +
+                    " (" +
+                    imported.set_code.toUpperCase() +
+                    ") " +
+                    imported.collector_number
+                );
+            }
+
+            if (
+                printing.name.toLowerCase() !==
+                imported.name.toLowerCase()
+            )
+            {
+                throw new Error(
+                    imported.set_code.toUpperCase() +
+                    " #" +
+                    imported.collector_number +
+                    " is " +
+                    printing.name +
+                    ", not " +
+                    imported.name
+                );
+            }
+
+            if (!printing.finishes.includes(
+                imported.finish
+            ))
+            {
+                throw new Error(
+                    imported.name +
+                    " (" +
+                    imported.set_code.toUpperCase() +
+                    ") " +
+                    imported.collector_number +
+                    " does not have finish: " +
+                    imported.finish
+                );
+            }
+
+            verifiedCards.push({
+                printing: printing,
+
+                finish: imported.finish,
+
+                quantity: imported.quantity
+            });
+        }
+
+        /* Space out larger imports */
+
+        if (start + 75 < cards.length)
+        {
+            await new Promise(
+                resolve => setTimeout(resolve, 650)
+            );
+        }
+    }
+
+    return verifiedCards;
+}
 
 /* Display Collection on Homepage */
 
@@ -163,30 +638,90 @@ function displayCollection()
 
     let total = 0;
 
+    const rarityCounts = {
+        common: 0,
+        uncommon: 0,
+        rare: 0,
+        mythic: 0
+    };
+
+    /* Count all owned copies */
+
     for (const card of collection)
     {
         total += card.quantity;
+
+        const rarity =
+            (card.rarity || "").toLowerCase();
+
+        if (rarityCounts[rarity] !== undefined)
+        {
+            rarityCounts[rarity] +=
+                card.quantity;
+        }
     }
+
+    /* Update collection overview */
 
     totalCards.textContent = total;
 
-/* =========================================
+    document.getElementById("commonCards")
+        .textContent = rarityCounts.common;
+
+    document.getElementById("uncommonCards")
+        .textContent = rarityCounts.uncommon;
+
+    document.getElementById("rareCards")
+        .textContent = rarityCounts.rare;
+
+    document.getElementById("mythicCards")
+        .textContent = rarityCounts.mythic;
+
+    /* =========================================
    SEARCH COLLECTION
    ========================================= */
 
-    const searchText =
-        collectionSearch.value.trim().toLowerCase();
-
     const visibleCards =
-        collection.filter(function(card)
-        {
-            return card.name.toLowerCase()
-                .includes(searchText);
-        });
+        getFilteredCollectionCards();
 
-    searchStatus.textContent =
-        "Showing " + visibleCards.length +
-        " of " + collection.length + " cards";
+    /* Calculate which entries belong on this page */
+
+const pageCount = Math.max(
+    1,
+    Math.ceil(
+        visibleCards.length / collectionPageSize
+    )
+);
+
+/* Stay on a valid page after deleting cards */
+
+collectionPage = Math.min(
+    Math.max(collectionPage, 1),
+    pageCount
+);
+
+const startIndex =
+    (collectionPage - 1) * collectionPageSize;
+
+const pageCards =
+    visibleCards.slice(
+        startIndex,
+        startIndex + collectionPageSize
+    );
+
+searchStatus.textContent =
+    "Showing " +
+    (visibleCards.length ? startIndex + 1 : 0) +
+    "–" +
+    Math.min(
+        startIndex + collectionPageSize,
+        visibleCards.length
+    ) +
+    " of " +
+    visibleCards.length +
+    " matching entries (" +
+    collection.length +
+    " total)";
 
     if (collection.length === 0)
     {
@@ -230,7 +765,7 @@ function displayCollection()
 
     table.appendChild(headerRow);
 
-    for (const card of visibleCards)
+    for (const card of pageCards)
     {
         const row =
             document.createElement("tr");
@@ -243,6 +778,39 @@ function displayCollection()
     const nameCell =
         document.createElement("td");
 
+    /* Compact image + card information */
+
+const nameRow =
+    document.createElement("div");
+
+nameRow.className =
+    "collection-card-name-row";
+
+const nameDetails =
+    document.createElement("div");
+
+nameDetails.className =
+    "collection-card-details";
+
+if (card.image_url)
+{
+    const thumbnail =
+        document.createElement("img");
+
+    thumbnail.src =
+        card.image_url;
+
+    thumbnail.alt =
+        card.name + " card";
+
+    thumbnail.loading = "lazy";
+
+    thumbnail.className =
+        "collection-card-thumbnail";
+
+    nameRow.appendChild(thumbnail);
+}
+    
     /* Main card name */
 
     const cardName =
@@ -254,7 +822,7 @@ function displayCollection()
     cardName.textContent =
         card.name;
 
-    nameCell.appendChild(cardName);
+    nameDetails.appendChild(cardName);
 
 
     /* Set name and collector number */
@@ -285,7 +853,45 @@ function displayCollection()
             "Printing not specified";
     }
 
-    nameCell.appendChild(printingInfo);
+    nameDetails.appendChild(printingInfo);
+
+    /* =====================================
+   PER-COPY AND TOTAL PRINTING VALUE
+   ===================================== */
+
+const priceInfo =
+    document.createElement("div");
+
+priceInfo.className =
+    "collection-card-price";
+
+const unitPrice =
+    getCollectionCardPrice(card);
+
+if (unitPrice === null)
+{
+    priceInfo.textContent =
+        "Price unavailable";
+}
+else
+{
+    const totalValue =
+        unitPrice * card.quantity;
+
+    priceInfo.textContent =
+        formatCollectionMoney(unitPrice) +
+        " per copy · " +
+        formatCollectionMoney(totalValue) +
+        " total";
+}
+
+        nameDetails.appendChild(priceInfo);
+
+        /* Finish the image + card information layout */
+
+        nameRow.appendChild(nameDetails);
+
+        nameCell.appendChild(nameRow);
 
         /* Quantity controls */
 
@@ -429,7 +1035,7 @@ function displayCollection()
                     newQuantity
                 );
 
-                await loadCloudCollection();
+                await reloadCollectionAfterQuantityChange();
             }
             catch (error)
             {
@@ -485,7 +1091,7 @@ function displayCollection()
                         newQuantity
                     );
 
-                    await loadCloudCollection();
+                    await reloadCollectionAfterQuantityChange();
                 }
                 catch (error)
                 {
@@ -606,7 +1212,180 @@ function displayCollection()
         table.appendChild(row);
     }
 
-    collectionResults.appendChild(table);
+/* =====================================
+   COLLECTION PAGINATION CONTROLS
+   ===================================== */
+
+function createCollectionPagination()
+{
+    const pagination =
+    document.createElement("div");
+
+pagination.className =
+    "collection-pagination";
+
+/* Previous page */
+
+const previousButton =
+    document.createElement("button");
+
+previousButton.type = "button";
+previousButton.textContent = "← Previous";
+
+previousButton.disabled =
+    collectionPage === 1;
+
+previousButton.addEventListener(
+    "click",
+    function()
+    {
+        collectionPage--;
+
+        displayCollection();
+
+        collectionResults.scrollIntoView({
+            behavior: "smooth",
+            block: "start"
+        });
+    }
+);
+
+/* Choose a specific page */
+
+const pageLabel =
+    document.createElement("label");
+
+pageLabel.textContent = "Page ";
+
+const pageSelect =
+    document.createElement("select");
+
+for (let page = 1; page <= pageCount; page++)
+{
+    const option =
+        document.createElement("option");
+
+    option.value = page;
+    option.textContent = page;
+
+    pageSelect.appendChild(option);
+}
+
+pageSelect.value = collectionPage;
+
+pageSelect.addEventListener(
+    "change",
+    function()
+    {
+        collectionPage =
+            Number(pageSelect.value);
+
+        displayCollection();
+
+        collectionResults.scrollIntoView({
+            behavior: "smooth",
+            block: "start"
+        });
+    }
+);
+
+pageLabel.appendChild(pageSelect);
+
+/* Show the total number of pages */
+
+const pageTotal =
+    document.createElement("span");
+
+pageTotal.textContent =
+    "of " + pageCount;
+
+/* Next page */
+
+const nextButton =
+    document.createElement("button");
+
+nextButton.type = "button";
+nextButton.textContent = "Next →";
+
+nextButton.disabled =
+    collectionPage === pageCount;
+
+nextButton.addEventListener(
+    "click",
+    function()
+    {
+        collectionPage++;
+
+        displayCollection();
+
+        collectionResults.scrollIntoView({
+            behavior: "smooth",
+            block: "start"
+        });
+    }
+);
+
+/* Entries per page */
+
+const sizeLabel =
+    document.createElement("label");
+
+sizeLabel.textContent = "Show ";
+
+const sizeSelect =
+    document.createElement("select");
+
+for (const size of [25, 50, 100])
+{
+    const option =
+        document.createElement("option");
+
+    option.value = size;
+    option.textContent = size;
+
+    sizeSelect.appendChild(option);
+}
+
+sizeSelect.value = collectionPageSize;
+
+sizeSelect.addEventListener(
+    "change",
+    function()
+    {
+        collectionPageSize =
+            Number(sizeSelect.value);
+
+        collectionPage = 1;
+
+        displayCollection();
+    }
+);
+
+sizeLabel.appendChild(sizeSelect);
+
+/* Assemble controls */
+
+pagination.appendChild(previousButton);
+pagination.appendChild(pageLabel);
+pagination.appendChild(pageTotal);
+pagination.appendChild(nextButton);
+pagination.appendChild(sizeLabel);
+
+    return pagination;
+}
+
+
+/* Pagination above and below the cards */
+
+collectionResults.appendChild(
+    createCollectionPagination()
+);
+
+collectionResults.appendChild(table);
+
+collectionResults.appendChild(
+    createCollectionPagination()
+);
 }
 
 /* =========================================
@@ -617,12 +1396,203 @@ collectionSearch.addEventListener(
     "input",
     function()
     {
+        collectionPage = 1;
+
         displayCollection();
     }
 );
 
+/* Redraw when any collection filter changes */
+
+for (const filter of [
+    collectionColorFilter,
+    collectionManaFilter,
+    collectionRarityFilter
+])
+{
+    filter.addEventListener(
+        "change",
+        function()
+        {
+            collectionPage = 1;
+
+            displayCollection();
+
+            loadCollectionPricing().catch(console.error);
+        }
+    );
+}
+
 /* =========================================
-   LOAD COLLECTION FROM SUPABASE
+   REMOVE ALL OWNED COLLECTION ENTRIES
+   ========================================= */
+
+const clearCollectionButton =
+    document.getElementById(
+        "clearCollectionButton"
+    );
+
+clearCollectionButton.addEventListener(
+    "click",
+    async function()
+    {
+        const { data: userData, error: userError } =
+            await supabaseClient.auth.getUser();
+
+        if (userError || !userData.user)
+        {
+            alert(
+                "Please sign in before removing cards."
+            );
+
+            return;
+        }
+
+        const confirmation = prompt(
+            "This will permanently delete ALL " +
+            "collection entries in your account, " +
+            "not just the current page.\n\n" +
+            "Type DELETE to confirm:"
+        );
+
+        if (confirmation !== "DELETE")
+        {
+            return;
+        }
+
+        clearCollectionButton.disabled = true;
+
+        clearCollectionButton.textContent =
+            "Removing...";
+
+        let removed = 0;
+
+        try
+        {
+            /* Delete manageable batches until
+               this account has no entries left */
+
+            while (true)
+            {
+                const { data, error } =
+                    await supabaseClient
+                        .from("collection_entries")
+                        .select("id")
+                        .eq(
+                            "user_id",
+                            userData.user.id
+                        )
+                        .order("id")
+                        .limit(200);
+
+                if (error)
+                {
+                    throw error;
+                }
+
+                if (data.length === 0)
+                {
+                    break;
+                }
+
+                const ids =
+                    data.map(entry => entry.id);
+
+                const {
+                    data: deleted,
+                    error: deleteError
+                } =
+                    await supabaseClient
+                        .from("collection_entries")
+                        .delete()
+                        .eq(
+                            "user_id",
+                            userData.user.id
+                        )
+                        .in("id", ids)
+                        .select("id");
+
+                if (deleteError)
+                {
+                    throw deleteError;
+                }
+
+                if (deleted.length !== ids.length)
+                {
+                    throw new Error(
+                        "Some entries could not be deleted."
+                    );
+                }
+
+                removed += deleted.length;
+            }
+
+            /* Return to the first page */
+
+            collectionPage = 1;
+
+            /* Reload collection and rarity counts */
+
+            await loadCloudCollection();
+
+            /* Save a new snapshot with
+               the empty collection's value */
+
+            try
+            {
+                const { error } =
+                    await supabaseClient
+                        .functions.invoke(
+                            "refresh-collection-prices"
+                        );
+
+                if (error)
+                {
+                    throw error;
+                }
+
+                await loadCollectionPricing();
+            }
+            catch (priceError)
+            {
+                console.error(priceError);
+
+                chartMessage.textContent =
+                    "Collection cleared. Refresh Prices " +
+                    "to update the chart.";
+            }
+
+            alert(
+                "Removed " + removed +
+                " collection entries."
+            );
+        }
+        catch (error)
+        {
+            console.error(error);
+
+            /* Reload even if a batch failed */
+
+            await loadCloudCollection();
+
+            alert(
+                "Remove All stopped after " +
+                removed + " entries.\n" +
+                error.message
+            );
+        }
+        finally
+        {
+            clearCollectionButton.disabled = false;
+
+            clearCollectionButton.textContent =
+                "Remove All";
+        }
+    }
+);
+
+/* =========================================
+   LOAD FULL COLLECTION FROM SUPABASE
    ========================================= */
 
 async function loadCloudCollection()
@@ -634,104 +1604,414 @@ async function loadCloudCollection()
     {
         collection = [];
 
-        displayCollection();
+        collectionPrices = new Map();
 
-        /* Clear any previous user's value and graph */
+        displayCollection();
 
         await loadCollectionPricing();
 
         return;
     }
 
-    const { data, error } =
-        await supabaseClient
-            .from("collection_entries")
-            .select(
-                "id, name, quantity, set_code, set_name, collector_number"
-                )
-            .eq("user_id", userData.user.id)
-            .order("name");
-
-    if (error)
-    {
-        console.error(error);
-
-        alert("Could not load your collection.");
-
-        return;
-    }
-
-    collection = data;
-
-    displayCollection();
-
-    await loadCollectionPricing();
-}
-
-/* Import Button */
-
-importButton.addEventListener("click", async function()
-{
-    if (collectionFile.files.length === 0)
-    {
-        alert("Please select a CSV file first.");
-
-        return;
-    }
-
-    const file = collectionFile.files[0];
-
     try
     {
-        const csvText = await file.text();
+        const allCards = [];
 
-        const importedCards =
-            parseCollectionCSV(csvText);
+        const pageSize = 500;
 
-        /* Combine Duplicate Card Names */
+        /* Retrieve every page of collection entries */
 
-        const cardMap = new Map();
-
-        for (const card of importedCards)
+        for (
+            let start = 0;
+            ;
+            start += pageSize
+        )
         {
-            const key =
-                card.name.toLowerCase();
+            const { data, error } =
+                await supabaseClient
+                    .from("collection_entries")
+                    .select(
+                        "id, name, quantity, scryfall_id, finish, rarity, " +
+                        "color_identity, mana_value, " +
+                        "set_code, set_name, collector_number, image_url"
+                    )
+                    .eq(
+                        "user_id",
+                        userData.user.id
+                    )
+                    .order("name")
+                    .order("id")
+                    .range(
+                        start,
+                        start + pageSize - 1
+                    );
 
-            if (cardMap.has(key))
+            if (error)
             {
-                cardMap.get(key).quantity +=
-                    card.quantity;
+                throw error;
             }
-            else
+
+            allCards.push(...data);
+
+            if (data.length < pageSize)
             {
-                cardMap.set(key, {
-                    name: card.name,
-                    quantity: card.quantity
-                });
+                break;
             }
         }
 
-        const importedCollection =
-            Array.from(cardMap.values());
+        /* IMPORTANT: This is outside the loop,
+           but inside the same function as allCards */
 
-        await saveCloudCollection(
-            importedCollection
+        collection = allCards;
+
+        console.log(
+            "Collection entries loaded:",
+            collection.length
         );
 
-        await loadCloudCollection();
+        /* Display quantities immediately */
 
-        alert(
-            "Collection saved to your account!"
-        );
+        displayCollection();
+
+        /* Retrieve exact-printing prices */
+
+        try
+        {
+            await loadCollectionCardPrices();
+
+            displayCollection();
+        }
+        catch (error)
+        {
+            console.error(
+                "Could not load card prices:",
+                error
+            );
+        }
+
+        /* Load the saved value and historical graph */
+
+        await loadCollectionPricing();
     }
     catch (error)
     {
-        console.error(error);
+        console.error(
+            "Could not load collection:",
+            error
+        );
 
-        alert(error.message);
+        alert(
+            "Could not load your collection. " +
+            "Check the browser Console."
+        );
     }
-});
+}
 
+/* =========================================
+   SAVE VERIFIED CSV PRINTINGS IN BATCHES
+   ========================================= */
+
+async function importVerifiedCardsFast(verifiedCards)
+{
+    const { data: userData, error: userError } =
+        await supabaseClient.auth.getUser();
+
+    if (userError || !userData.user)
+    {
+        throw new Error(
+            "Please sign in before importing cards."
+        );
+    }
+
+    const userId = userData.user.id;
+
+    /* Combine repeated printings within
+       this CSV before saving */
+
+    const grouped = new Map();
+
+    for (const card of verifiedCards)
+    {
+        const key =
+            card.printing.id + "|" + card.finish;
+
+        if (grouped.has(key))
+        {
+            grouped.get(key).quantity +=
+                card.quantity;
+        }
+        else
+        {
+            grouped.set(key, {
+                printing: card.printing,
+                finish: card.finish,
+                quantity: card.quantity
+            });
+        }
+    }
+
+    const cards =
+        [...grouped.values()];
+
+    /* Find which exact printings this
+       account already owns */
+
+    const existingKeys = new Set();
+
+    const ids = [
+        ...new Set(
+            cards.map(card => card.printing.id)
+        )
+    ];
+
+    for (let start = 0; start < ids.length; start += 75)
+    {
+        const batch =
+            ids.slice(start, start + 75);
+
+        const { data, error } =
+            await supabaseClient
+                .from("collection_entries")
+                .select("scryfall_id, finish")
+                .eq("user_id", userId)
+                .in("scryfall_id", batch);
+
+        if (error)
+        {
+            throw error;
+        }
+
+        for (const entry of data)
+        {
+            existingKeys.add(
+                entry.scryfall_id +
+                "|" +
+                entry.finish
+            );
+        }
+    }
+
+    const newEntries = [];
+    const existingEntries = [];
+
+    for (const card of cards)
+    {
+        const printing = card.printing;
+
+        const key =
+            printing.id + "|" + card.finish;
+
+        /* Existing cards still use your
+           working add-to-quantity function */
+
+        if (existingKeys.has(key))
+        {
+            existingEntries.push(card);
+            continue;
+        }
+
+        /* Build a full printing-specific
+           collection entry */
+
+        const rawPrice =
+            card.finish === "foil"
+                ? printing.prices.usd_foil
+                : card.finish === "etched"
+                    ? printing.prices.usd_etched
+                    : printing.prices.usd;
+
+        const imageURL =
+            printing.image_uris?.normal ??
+            printing.card_faces?.[0]?.image_uris?.normal ??
+            null;
+
+        newEntries.push({
+            user_id: userId,
+
+            name: printing.name,
+            quantity: card.quantity,
+
+            scryfall_id: printing.id,
+            oracle_id: printing.oracle_id ?? null,
+
+            set_code: printing.set,
+            set_name: printing.set_name,
+            collector_number: printing.collector_number,
+
+            finish: card.finish,
+            rarity: printing.rarity,
+
+            color_identity: printing.color_identity,
+            mana_value: printing.cmc,
+            type_line: printing.type_line,
+
+            image_url: imageURL,
+
+            price_usd:
+                rawPrice === null ||
+                rawPrice === undefined
+                    ? null
+                    : Number(rawPrice)
+        });
+    }
+
+    /* Insert new printings together
+       in manageable database batches */
+
+    for (
+        let start = 0;
+        start < newEntries.length;
+        start += 50
+    )
+    {
+        const batch =
+            newEntries.slice(start, start + 50);
+
+        const { error } =
+            await supabaseClient
+                .from("collection_entries")
+                .insert(batch);
+
+        if (error)
+        {
+            throw error;
+        }
+    }
+
+    /* Preserve existing behavior:
+       importing an owned printing adds copies */
+
+    for (const card of existingEntries)
+    {
+        await addPrintingToCollection(
+            card.printing,
+            card.finish,
+            card.quantity
+        );
+    }
+
+    return {
+        newPrintings: newEntries.length,
+        updatedPrintings: existingEntries.length
+    };
+}
+
+/* =========================================
+   IMPORT PRINTING-AWARE COLLECTION
+   ========================================= */
+
+importButton.addEventListener(
+    "click",
+    async function()
+    {
+        if (collectionFile.files.length === 0)
+        {
+            alert(
+                "Please select a CSV file first."
+            );
+
+            return;
+        }
+
+        importButton.disabled = true;
+
+        importButton.textContent =
+            "Importing...";
+
+        try
+        {
+            /* Read CSV */
+
+            const file =
+                collectionFile.files[0];
+
+            const csvText =
+                await file.text();
+
+            const importedCards =
+                parseCollectionCSV(csvText);
+
+            /* Verify all printings with Scryfall */
+
+            const verifiedCards =
+                await verifyImportedPrintings(
+                    importedCards
+                );
+
+            /* Save new printings in batches */
+
+            const importResult =
+                await importVerifiedCardsFast(
+                    verifiedCards
+                );
+
+            /* Reload collection */
+
+            await loadCloudCollection();
+
+            alert(
+                "Collection import complete!\n" +
+                importResult.newPrintings +
+                " new printings added.\n" +
+                importResult.updatedPrintings +
+                " existing printings updated."
+            );
+        }
+        catch (error)
+        {
+            console.error(error);
+
+            alert(
+                "Collection import failed: " +
+                error.message
+            );
+        }
+        finally
+        {
+            importButton.disabled = false;
+
+            importButton.textContent =
+                "Import Collection";
+
+            collectionFile.value = "";
+        }
+    }
+);
+
+/* =========================================
+   COMPACT CSV IMPORT BUTTON
+   ========================================= */
+
+const importCsvButton =
+    document.getElementById("importCsvButton");
+
+/* Open the file picker */
+
+importCsvButton.addEventListener(
+    "click",
+    function()
+    {
+        if (importButton.disabled)
+        {
+            return;
+        }
+
+        collectionFile.click();
+    }
+);
+
+/* Start importing after a file is chosen */
+
+collectionFile.addEventListener(
+    "change",
+    function()
+    {
+        if (collectionFile.files.length > 0)
+        {
+            importButton.click();
+        }
+    }
+);
 
 /* =========================================
    SCRYFALL CARD LOOKUP
@@ -819,6 +2099,30 @@ const accountPassword =
 const accountStatus =
     document.getElementById("accountStatus");
 
+/* =========================================
+   UPDATE HEADER ACCOUNT DISPLAY
+   ========================================= */
+
+const headerAccount =
+    document.getElementById("account");
+
+supabaseClient.auth.onAuthStateChange(
+    function(event, session)
+    {
+        const user =
+            session?.user ?? null;
+
+        headerAccount.classList.toggle(
+            "is-signed-in",
+            Boolean(user)
+        );
+
+        accountStatus.textContent =
+            user
+                ? "Signed in as " + user.email
+                : "Not signed in.";
+    }
+);
 
 /* Create Account */
 
@@ -1995,12 +3299,19 @@ refreshPricesButton.addEventListener(
                 throw error;
             }
 
-            /* If we successfully refreshed,
-               reload the collection's value
-               and graph from Supabase. */
+            /* Update the saved collection total
+            and historical chart */
 
             await loadCollectionPricing();
 
+            /* Update the individual card prices */
+
+            await loadCollectionCardPrices();
+
+            displayCollection();
+
+            await loadCollectionPricing();
+            
             console.log(
                 "Price refresh complete:",
                 data
@@ -2025,6 +3336,103 @@ refreshPricesButton.addEventListener(
 );
 
 /* =========================================
+   CURRENT VALUE OF FILTERED COLLECTION
+   ========================================= */
+
+function displayFilteredCollectionPricing()
+{
+    const matchingCards =
+        getFilteredCollectionCards();
+
+    let filteredValue = 0;
+    let pricedCopies = 0;
+    let unpricedCopies = 0;
+
+    for (const card of matchingCards)
+    {
+        const price =
+            getCollectionCardPrice(card);
+
+        if (price === null)
+        {
+            unpricedCopies += card.quantity;
+            continue;
+        }
+
+        filteredValue +=
+            price * card.quantity;
+
+        pricedCopies += card.quantity;
+    }
+
+    filteredValue =
+        Number(filteredValue.toFixed(2));
+
+    collectionValue.textContent =
+        formatCollectionMoney(filteredValue);
+
+    chartMessage.textContent =
+        "Filtered collection · " +
+        matchingCards.length +
+        " matching printings · " +
+        pricedCopies +
+        " priced copies · " +
+        unpricedCopies +
+        " unpriced copies. " +
+        "Historical filtering is not yet available.";
+
+    /* Remove the old unfiltered chart */
+
+    if (priceChartInstance)
+    {
+        priceChartInstance.destroy();
+        priceChartInstance = null;
+    }
+
+    /* Show today's filtered value only */
+
+    priceChartInstance = new Chart(
+        priceChartCanvas,
+        {
+            type: "line",
+
+            data: {
+                labels: ["Current"],
+
+                datasets: [
+                    {
+                        label:
+                            "Filtered Collection Value (USD)",
+
+                        data: [filteredValue],
+
+                        showLine: false,
+                        pointRadius: 6,
+                        pointHoverRadius: 8
+                    }
+                ]
+            },
+
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+
+                scales: {
+                    y: {
+                        ticks: {
+                            callback:
+                                value => "$" + value
+                        }
+                    }
+                }
+            }
+        }
+    );
+}
+
+
+
+/* =========================================
    DISPLAY COLLECTION PRICING
    ========================================= */
 
@@ -2046,7 +3454,24 @@ async function loadCollectionPricing()
 
             priceChartInstance = null;
         }
+         /* Check whether any collection filter is active */
 
+        const hasActiveFilters =
+            collectionSearch.value.trim() !== "" ||
+            collectionColorFilter.value !== "" ||
+            collectionManaFilter.value !== "" ||
+            collectionRarityFilter.value !== "";
+
+        if (hasActiveFilters)
+        {
+            displayFilteredCollectionPricing();
+
+            return;
+        }
+
+        const { data, error } =
+            await supabaseClient
+                .from("collection_value_snapshots")
         return;
     }
 
@@ -2257,6 +3682,52 @@ async function loadCollectionPricing()
 }
 
 /* =========================================
+   REFRESH VALUE AFTER QUANTITY CHANGES
+   ========================================= */
+
+async function reloadCollectionAfterQuantityChange()
+{
+    let refreshFailed = false;
+
+    /* Recalculate the saved collection total */
+
+    try
+    {
+        const { error } =
+            await supabaseClient.functions.invoke(
+                "refresh-collection-prices"
+            );
+
+        if (error)
+        {
+            throw error;
+        }
+    }
+    catch (error)
+    {
+        console.error(
+            "Quantity saved, but price refresh failed:",
+            error
+        );
+
+        refreshFailed = true;
+    }
+
+    /* Reload the card quantities, individual
+       prices, and updated chart */
+
+    await loadCloudCollection();
+
+    if (refreshFailed)
+    {
+        chartMessage.textContent =
+            "Quantity saved, but the collection " +
+            "value could not refresh. " +
+            "Try Refresh Prices.";
+    }
+}
+
+/* =========================================
    COLLECTION GRAPH DATE RANGES
    ========================================= */
 
@@ -2296,4 +3767,287 @@ for (const button of chartRangeButtons)
             }
         }
     );
+}
+
+/* =========================================
+   FLOATING COLLECTION CARD PREVIEW
+   ========================================= */
+
+/* One floating preview for the whole page */
+
+const collectionCardPreview =
+    document.createElement("div");
+
+/* Reuse the My Decks preview styling */
+
+collectionCardPreview.className =
+    "deck-card-preview";
+
+collectionCardPreview.setAttribute(
+    "aria-hidden",
+    "true"
+);
+
+const collectionPreviewImage =
+    document.createElement("img");
+
+collectionPreviewImage.alt = "";
+
+collectionCardPreview.appendChild(
+    collectionPreviewImage
+);
+
+document.body.appendChild(
+    collectionCardPreview
+);
+
+let activeCollectionImage = null;
+
+let collectionPointerX = 0;
+let collectionPointerY = 0;
+
+
+/* Keep the preview within the window */
+
+function positionCollectionPreview(x, y)
+{
+    const offset = 24;
+    const margin = 12;
+
+    const rect =
+        collectionCardPreview.getBoundingClientRect();
+
+    let left = x + offset;
+    let top = y + offset;
+
+    if (
+        left + rect.width >
+        window.innerWidth - margin
+    )
+    {
+        left = x - rect.width - offset;
+    }
+
+    if (
+        top + rect.height >
+        window.innerHeight - margin
+    )
+    {
+        top = y - rect.height - offset;
+    }
+
+    left = Math.max(
+        margin,
+        Math.min(
+            left,
+            window.innerWidth - rect.width - margin
+        )
+    );
+
+    top = Math.max(
+        margin,
+        Math.min(
+            top,
+            window.innerHeight - rect.height - margin
+        )
+    );
+
+    collectionCardPreview.style.left =
+        left + "px";
+
+    collectionCardPreview.style.top =
+        top + "px";
+}
+
+
+/* Hide the preview */
+
+function hideCollectionPreview()
+{
+    activeCollectionImage = null;
+
+    collectionCardPreview.style.display =
+        "none";
+}
+
+
+/* Show it when hovering over a thumbnail */
+
+document.addEventListener(
+    "pointerover",
+    function(event)
+    {
+        if (event.pointerType === "touch")
+        {
+            return;
+        }
+
+        const image =
+            event.target.closest?.(
+                ".collection-card-thumbnail"
+            );
+
+        if (!image)
+        {
+            return;
+        }
+
+        activeCollectionImage = image;
+
+        collectionPointerX =
+            event.clientX;
+
+        collectionPointerY =
+            event.clientY;
+
+        collectionPreviewImage.src =
+            image.currentSrc || image.src;
+
+        collectionCardPreview.style.display =
+            "block";
+
+        positionCollectionPreview(
+            collectionPointerX,
+            collectionPointerY
+        );
+    }
+);
+
+
+/* Follow the cursor */
+
+document.addEventListener(
+    "pointermove",
+    function(event)
+    {
+        if (!activeCollectionImage)
+        {
+            return;
+        }
+
+        collectionPointerX =
+            event.clientX;
+
+        collectionPointerY =
+            event.clientY;
+
+        positionCollectionPreview(
+            collectionPointerX,
+            collectionPointerY
+        );
+    }
+);
+
+
+/* Hide when leaving the thumbnail */
+
+document.addEventListener(
+    "pointerout",
+    function(event)
+    {
+        if (
+            event.target ===
+            activeCollectionImage
+        )
+        {
+            hideCollectionPreview();
+        }
+    }
+);
+
+
+/* Correct the position after image loading */
+
+collectionPreviewImage.addEventListener(
+    "load",
+    function()
+    {
+        if (activeCollectionImage)
+        {
+            positionCollectionPreview(
+                collectionPointerX,
+                collectionPointerY
+            );
+        }
+    }
+);
+
+
+/* Prevent previews sticking during scrolling */
+
+window.addEventListener(
+    "scroll",
+    hideCollectionPreview,
+    true
+);
+
+window.addEventListener(
+    "blur",
+    hideCollectionPreview
+);
+
+/* =========================================
+   FILTER COLLECTION FOR LIST AND CHART
+   ========================================= */
+
+function getFilteredCollectionCards()
+{
+    const searchText =
+        collectionSearch.value.trim().toLowerCase();
+
+    const selectedColor =
+        collectionColorFilter.value;
+
+    const selectedMana =
+        collectionManaFilter.value;
+
+    const selectedRarity =
+        collectionRarityFilter.value;
+
+    return collection.filter(function(card)
+    {
+        const nameMatches =
+            card.name.toLowerCase()
+                .includes(searchText);
+
+        const colors =
+            Array.isArray(card.color_identity)
+                ? card.color_identity
+                : null;
+
+        const colorMatches =
+            selectedColor === "" ||
+            (
+                colors !== null &&
+                (
+                    selectedColor === "C"
+                        ? colors.length === 0
+                        : colors.includes(selectedColor)
+                )
+            );
+
+        const manaMatches =
+            selectedMana === "" ||
+            (
+                card.mana_value !== null &&
+                card.mana_value !== undefined &&
+                (
+                    selectedMana === "11+"
+                        ? Number(card.mana_value) >= 11
+                        : Number(card.mana_value) ===
+                            Number(selectedMana)
+                )
+            );
+
+        const rarityMatches =
+            selectedRarity === "" ||
+            card.rarity === selectedRarity;
+
+        return (
+            nameMatches &&
+            colorMatches &&
+            manaMatches &&
+            rarityMatches
+        );
+    });
 }

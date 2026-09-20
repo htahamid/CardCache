@@ -52,6 +52,44 @@
 
             </div>
 
+
+        <section id="account" class="header-account">
+
+            <p id="accountStatus">
+                Not signed in.
+            </p>
+
+            <div class="account-fields">
+
+                <input
+                    type="email"
+                    id="accountEmail"
+                    placeholder="Email"
+                    autocomplete="email"
+                >
+
+                <input
+                    type="password"
+                    id="accountPassword"
+                    placeholder="Password"
+                    autocomplete="current-password"
+                >
+
+                <button type="button" id="signUpButton">
+                    Create Account
+                </button>
+
+                <button type="button" id="signInButton">
+                    Sign In
+                </button>
+
+            </div>
+
+            <button type="button" id="signOutButton">
+                Sign Out
+            </button>
+
+        </section>
             
         <button
             type="button"
@@ -103,6 +141,8 @@
 
         </div>
 
+        <div class="header-divider"></div>
+
     <nav>
 
         <a href="index.html">
@@ -113,48 +153,11 @@
             My Decks
         </a>
 
-        <a href="#">
-            Recommendations
-        </a>
-
     </nav>
 
     </header>
 
     <main>
-            <section id="account">
-
-        <h2>My Account</h2>
-
-        <p id="accountStatus">
-            Not signed in.
-        </p>
-
-        <input
-            type="email"
-            id="accountEmail"
-            placeholder="Email"
-        >
-
-        <input
-            type="password"
-            id="accountPassword"
-            placeholder="Password"
-        >
-
-        <button id="signUpButton">
-            Create Account
-        </button>
-
-        <button id="signInButton">
-            Sign In
-        </button>
-
-        <button id="signOutButton">
-            Sign Out
-        </button>
-
-    </section>
 
         <section id="collection">
 
@@ -269,26 +272,7 @@
 
         </div>
 
-            <section id="import">
-
-                <h2>Import Your Collection</h2>
-
-                <p>
-                    Upload a CSV file containing your
-                    existing Magic cards.
-                </p>
-
-                <input
-                    type="file"
-                    id="collectionFile"
-                    accept=".csv,text/csv"
-                >
-
-                <button id="importButton">
-                    Import Collection
-                </button>
-
-            </section>
+           
         
         
 
@@ -309,6 +293,37 @@
                         id="addCardButton"
                     >
                         + Add Card
+                    </button>
+
+                    <button
+                        type="button"
+                        id="importCsvButton"
+                    >
+                        Import CSV
+                    </button>
+
+                    <button
+                        type="button"
+                        id="clearCollectionButton"
+                        class="clear-collection-button"
+                    >
+                        Remove All
+                    </button>
+                    <!-- Keep the existing import logic working -->
+
+                    <input
+                        type="file"
+                        id="collectionFile"
+                        accept=".csv,text/csv"
+                        class="hidden-file-input"
+                    >
+
+                    <button
+                        type="button"
+                        id="importButton"
+                        hidden
+                    >
+                        Import Collection
                     </button>
 
                 </div>
