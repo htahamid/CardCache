@@ -1,10 +1,10 @@
-# DeckFoundry
+# CardCache
 
 Build more decks. Buy fewer cards.
 
 ## About
 
-DeckFoundry is an inventory-aware Magic: The Gathering
+CardCache is an inventory-aware Magic: The Gathering
 deckbuilding application.
 
 It helps players discover useful cards in their existing
