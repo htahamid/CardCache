@@ -2,7 +2,7 @@
 
 **Build more decks. Buy fewer cards.**
 
-[Live Demo](https://htahamid.github.io/ManaSaver/index.html) | [GitHub Repository](https://github.com/htahamid/ManaSaver)
+[Live Demo](https://htahamid.github.io/ManaSaver/index.html)
 
 ## About
 
